@@ -1,139 +1,152 @@
-"""
-Module: Task6.py
-Problem: Robot Parcel Delivery (Poland Network)
-Method: Functional Search Algorithms (DFS, BFS, A*)
-Description: Implements uninformed and informed search strategies to find 
-paths from Glogow (Start) to Plock (Goal) using Diagram (a) for 
-actual distances and Diagram (b) for heuristics.
-"""
-
-from collections import deque
+import networkx as nx
+import matplotlib.pyplot as plt
 import heapq
-from typing import Tuple, List, Dict, Optional, Set
+from collections import deque
 
 # ============================================================================
-# 1. STATE SPACE & HEURISTICS (Data Modeling)
+# 1. DATA MODELING (Nepal Names, Coursework Topology)
 # ============================================================================
 
-# Actual distances between cities in Poland from Diagram (a) [cite: 329-367]
-POLAND_MAP = {
-    'Glogow': {'Leszno': 45, 'Wroclaw': 140},
-    'Leszno': {'Glogow': 45, 'Poznan': 90, 'Kalisz': 140, 'Wroclaw': 100},
-    'Wroclaw': {'Leszno': 100, 'Glogow': 140, 'Kalisz': 160, 'Częstochowa': 118, 'Opole': 100},
-    'Poznan': {'Bydgoszcz': 140, 'Konin': 120, 'Kalisz': 130, 'Leszno': 90},
-    'Bydgoszcz': {'Poznan': 140, 'Włocławek': 110},
-    'Włocławek': {'Bydgoszcz': 110, 'Plock': 55, 'Konin': 120},
-    'Plock': {'Włocławek': 55, 'Warsaw': 130},
-    'Konin': {'Włocławek': 120, 'Poznan': 120, 'Kalisz': 120, 'Lodz': 120},
-    'Kalisz': {'Poznan': 130, 'Konin': 120, 'Lodz': 160, 'Wroclaw': 160, 'Leszno': 140},
-    'Warsaw': {'Plock': 130, 'Lodz': 150, 'Radom': 105},
-    'Lodz': {'Warsaw': 150, 'Konin': 120, 'Kalisz': 160, 'Częstochowa': 128, 'Radom': 165},
-    'Radom': {'Warsaw': 105, 'Lodz': 165, 'Kielce': 82, 'Kraków': 280},
-    'Częstochowa': {'Wroclaw': 118, 'Lodz': 128, 'Katowice': 80},
-    'Opole': {'Wroclaw': 100, 'Katowice': 85},
-    'Katowice': {'Częstochowa': 80, 'Opole': 85, 'Kraków': 85},
-    'Kielce': {'Radom': 82, 'Kraków': 120},
-    'Kraków': {'Katowice': 85, 'Kielce': 120, 'Radom': 280}
+# Mapping Strategy:
+# Glogow (Start) -> Mahendranagar
+# Plock (Goal)   -> Kathmandu
+# Wloclawek      -> Pokhara (The main gateway to the goal)
+
+NEPAL_MAP = {
+    'Mahendranagar': {'Dhangadhi': 45, 'Nepalgunj': 140},           # Was Glogow (START)
+    'Dhangadhi':     {'Mahendranagar': 45, 'Surkhet': 90, 'Tansen': 140, 'Nepalgunj': 100}, # Was Leszno
+    'Nepalgunj':     {'Dhangadhi': 100, 'Mahendranagar': 140, 'Tansen': 160, 'Narayangarh': 118, 'Dang': 100}, # Was Wroclaw
+    'Surkhet':       {'Dailekh': 140, 'Butwal': 120, 'Tansen': 130, 'Dhangadhi': 90}, # Was Poznan
+    'Dailekh':       {'Surkhet': 140, 'Pokhara': 110},              # Was Bydgoszcz
+    'Pokhara':       {'Dailekh': 110, 'Kathmandu': 55, 'Butwal': 120}, # Was Wloclawek (Key Hub)
+    'Kathmandu':     {'Pokhara': 55, 'Bhaktapur': 130},             # Was Plock (GOAL)
+    'Butwal':        {'Pokhara': 120, 'Surkhet': 120, 'Tansen': 120, 'Hetauda': 120}, # Was Konin
+    'Tansen':        {'Surkhet': 130, 'Butwal': 120, 'Hetauda': 160, 'Nepalgunj': 160, 'Dhangadhi': 140}, # Was Kalisz
+    'Bhaktapur':     {'Kathmandu': 130, 'Hetauda': 150, 'Janakpur': 105}, # Was Warsaw
+    'Hetauda':       {'Bhaktapur': 150, 'Butwal': 120, 'Tansen': 160, 'Narayangarh': 128, 'Janakpur': 165}, # Was Lodz
+    'Janakpur':      {'Bhaktapur': 105, 'Hetauda': 165, 'Sindhuli': 82, 'Biratnagar': 280}, # Was Radom
+    'Narayangarh':   {'Nepalgunj': 118, 'Hetauda': 128, 'Lumbini': 80}, # Was Częstochowa
+    'Dang':          {'Nepalgunj': 100, 'Lumbini': 85},             # Was Opole
+    'Lumbini':       {'Narayangarh': 80, 'Dang': 85, 'Biratnagar': 85}, # Was Katowice
+    'Sindhuli':      {'Janakpur': 82, 'Biratnagar': 120},           # Was Kielce
+    'Biratnagar':    {'Lumbini': 85, 'Sindhuli': 120, 'Janakpur': 280} # Was Kraków
 }
 
-# Straight-line distances (Heuristic h(n)) to Plock from Diagram (b) [cite: 290-328]
-H_PLOCK = {
-    'Bydgoszcz': 90, 'Wloclawek': 44, 'Plock': 0, 'Konin': 96,
-    'Poznan': 107, 'Warsaw': 95, 'Lodz': 118, 'Leszno': 103,
-    'Kalisz': 107, 'Radom': 91, 'Glogow': 40, 'Wroclaw': 80,
-    'Częstochowa': 90, 'Kielce': 102, 'Opole': 190, 'Kraków': 68,
-    'Katowice': 61
+# Heuristic Straight-Line Distance to Kathmandu (Goal)
+# Values mapped from Diagram B [cite: 290-328]
+H_KATHMANDU = {
+    'Dailekh': 90, 'Pokhara': 44, 'Kathmandu': 0, 'Butwal': 96,
+    'Surkhet': 107, 'Bhaktapur': 95, 'Hetauda': 118, 'Dhangadhi': 103,
+    'Tansen': 107, 'Janakpur': 91, 'Mahendranagar': 40, 'Nepalgunj': 80,
+    'Narayangarh': 90, 'Sindhuli': 102, 'Dang': 190, 'Biratnagar': 68,
+    'Lumbini': 61
+}
+
+# Visualization Coordinates (Keeping topology layout)
+CITY_COORDS = {
+    'Dailekh': (4, 9), 'Pokhara': (6, 8), 'Kathmandu': (7, 7.5),
+    'Surkhet': (2, 7), 'Butwal': (4, 6), 'Bhaktapur': (9, 6),
+    'Mahendranagar': (0, 4), 'Dhangadhi': (2, 5), 'Tansen': (3, 4), 'Hetauda': (6, 4.5), 'Janakpur': (8, 3),
+    'Nepalgunj': (2, 3), 'Narayangarh': (5, 2), 'Sindhuli': (7, 2),
+    'Dang': (3, 1), 'Lumbini': (5, 1), 'Biratnagar': (7, 0)
 }
 
 # ============================================================================
 # 2. SEARCH ALGORITHMS
 # ============================================================================
 
-def depth_first_search(start: str, goal: str) -> Optional[List[str]]:
-    """1a. DFS using Stack (Open) and Set (Closed) containers."""
-    open_stack = [(start, [start])]
-    closed_set = set()
-
-    while open_stack:
-        current, path = open_stack.pop()
-        if current == goal: return path
-        
-        if current not in closed_set:
-            closed_set.add(current)
-            # Add neighbors to stack in reverse to maintain typical DFS order
-            for neighbor in reversed(list(POLAND_MAP.get(current, {}).keys())):
-                if neighbor not in closed_set:
-                    open_stack.append((neighbor, path + [neighbor]))
+def get_dfs_path(start, goal):
+    stack = [(start, [start])]
+    visited = set()
+    while stack:
+        (node, path) = stack.pop()
+        if node == goal: return path
+        if node not in visited:
+            visited.add(node)
+            for neighbor in reversed(list(NEPAL_MAP.get(node, {}).keys())):
+                stack.append((neighbor, path + [neighbor]))
     return None
 
-def breadth_first_search(start: str, goal: str) -> Optional[List[str]]:
-    """1b. BFS using Queue (Open) and Set (Closed) containers."""
-    open_queue = deque([(start, [start])])
-    closed_set = {start}
-
-    while open_queue:
-        current, path = open_queue.popleft()
-        if current == goal: return path
-        
-        for neighbor in POLAND_MAP.get(current, {}):
-            if neighbor not in closed_set:
-                closed_set.add(neighbor)
-                open_queue.append((neighbor, path + [neighbor]))
+def get_bfs_path(start, goal):
+    queue = deque([(start, [start])])
+    visited = {start}
+    while queue:
+        (node, path) = queue.popleft()
+        if node == goal: return path
+        for neighbor in NEPAL_MAP.get(node, {}):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, path + [neighbor]))
     return None
 
-def a_star_search(start: str, goal: str) -> Tuple[Optional[List[str]], int]:
-    """2. A* algorithm using f(n) = g(n) + h(n) logic."""
-    # Open priority queue: (f_score, actual_g_score, current_node, current_path)
-    open_pq = [(H_PLOCK[start], 0, start, [start])]
-    closed_costs = {start: 0}
-
-    while open_pq:
-        f, g, current, path = heapq.heappop(open_pq)
+def get_astar_path(start, goal):
+    # Priority Queue: (f_score, g_score, current_node, path)
+    pq = [(H_KATHMANDU.get(start, 999), 0, start, [start])]
+    visited_costs = {start: 0}
+    
+    while pq:
+        (f, g, node, path) = heapq.heappop(pq)
+        if node == goal: return path
         
-        if current == goal: return path, g
-        
-        for neighbor, weight in POLAND_MAP.get(current, {}).items():
+        for neighbor, weight in NEPAL_MAP.get(node, {}).items():
             new_g = g + weight
-            # Only proceed if we found a cheaper way to this neighbor
-            if neighbor not in closed_costs or new_g < closed_costs[neighbor]:
-                closed_costs[neighbor] = new_g
-                f_score = new_g + H_PLOCK.get(neighbor, 999)
-                heapq.heappush(open_pq, (f_score, new_g, neighbor, path + [neighbor]))
-    return None, 0
+            if neighbor not in visited_costs or new_g < visited_costs[neighbor]:
+                visited_costs[neighbor] = new_g
+                h = H_KATHMANDU.get(neighbor, 999)
+                heapq.heappush(pq, (new_g + h, new_g, neighbor, path + [neighbor]))
+    return None
 
 # ============================================================================
-# 3. ANALYSIS & EXECUTION
+# 3. VISUALIZATION ENGINE
 # ============================================================================
 
-def calculate_path_distance(path):
-    """Calculates total road distance of a given path."""
-    dist = 0
-    for i in range(len(path) - 1):
-        dist += POLAND_MAP[path[i]][path[i+1]]
-    return dist
+def draw_network_path(path, algorithm_name, ax):
+    G = nx.Graph()
+    for city, neighbors in NEPAL_MAP.items():
+        for neighbor, weight in neighbors.items():
+            G.add_edge(city, neighbor, weight=weight)
+    
+    # Draw Base Map
+    nx.draw_networkx_edges(G, pos=CITY_COORDS, ax=ax, edge_color='#e0e0e0', width=1)
+    nx.draw_networkx_nodes(G, pos=CITY_COORDS, ax=ax, node_color='#cccccc', node_size=300)
+    
+    # Draw Labels
+    nx.draw_networkx_labels(G, pos=CITY_COORDS, ax=ax, font_size=8, font_weight='bold')
+    edge_labels = nx.get_edge_attributes(G, 'weight')
+    nx.draw_networkx_edge_labels(G, pos=CITY_COORDS, edge_labels=edge_labels, ax=ax, font_size=7)
+    
+    # Highlight Path
+    if path:
+        path_edges = list(zip(path, path[1:]))
+        nx.draw_networkx_edges(G, pos=CITY_COORDS, edgelist=path_edges, ax=ax, edge_color='red', width=3)
+        nx.draw_networkx_nodes(G, pos=CITY_COORDS, nodelist=path, ax=ax, node_color='#ff9999', node_size=400)
+        
+        # Start and Goal
+        nx.draw_networkx_nodes(G, pos=CITY_COORDS, nodelist=[path[0]], ax=ax, node_color='green', node_size=500)
+        nx.draw_networkx_nodes(G, pos=CITY_COORDS, nodelist=[path[-1]], ax=ax, node_color='gold', node_size=500)
+        
+        cost = sum(NEPAL_MAP[path[i]][path[i+1]] for i in range(len(path)-1))
+        ax.set_title(f"{algorithm_name}\nNodes: {len(path)} | Cost: {cost}", fontsize=10, fontweight='bold')
+    else:
+        ax.set_title(f"{algorithm_name}: No Path", color='red')
+    ax.axis('off')
 
 if __name__ == "__main__":
-    start_city, target_city = 'Glogow', 'Plock'
+    start_city = 'Mahendranagar'
+    target_city = 'Kathmandu'
     
-    print("-" * 65)
-    print(f"ROBOT DELIVERY TASK: {start_city} to {target_city}")
-    print("-" * 65)
-
-    # 1a. DFS Results
-    dfs_path = depth_first_search(start_city, target_city)
-    print(f"DFS Path: {' -> '.join(dfs_path)} (Dist: {calculate_path_distance(dfs_path)})")
-
-    # 1b. BFS Results
-    bfs_path = breadth_first_search(start_city, target_city)
-    print(f"BFS Path: {' -> '.join(bfs_path)} (Dist: {calculate_path_distance(bfs_path)})")
-
-    # 2. A* Results
-    astar_path, astar_cost = a_star_search(start_city, target_city)
-    print(f"A* Path:  {' -> '.join(astar_path)} (Dist: {astar_cost})")
+    print(f"Calculating delivery routes: {start_city} to {target_city}...")
     
-    print("-" * 65)
-    print("Discussion Context:")
-    print("- BFS finds the path with fewest nodes but ignores road distance.")
-    print("- DFS explores deep branches but often results in suboptimal path lengths.")
-    print("- A* utilizes heuristics to minimize actual travel distance efficiently.")
-    print("-" * 65)
+    p_dfs = get_dfs_path(start_city, target_city)
+    p_bfs = get_bfs_path(start_city, target_city)
+    p_astar = get_astar_path(start_city, target_city)
+    
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    plt.suptitle(f"Nepal Logistics AI: {start_city} to {target_city}", fontsize=16)
+    
+    draw_network_path(p_dfs, "DFS (Depth First)", axes[0])
+    draw_network_path(p_bfs, "BFS (Breadth First)", axes[1])
+    draw_network_path(p_astar, "A* Search (Optimal)", axes[2])
+    
+    plt.tight_layout()
+    plt.show()
